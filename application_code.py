@@ -2,6 +2,7 @@ import cv2
 import threading
 from playsound import playsound
 from ultralytics import YOLO
+import numpy as np
 
 # Constantes
 ALERT_FILE = "./sound.mp3"
@@ -31,6 +32,8 @@ def validate_model(model_path: str, data_path: str) -> None:
 def predict_fire(model, frame, conf: float):
     try:
         results = model.predict(source=frame, show=False, conf=conf, stream=False)
+        if results:
+            print(f"Résultats de la prédiction : {results}")  # Débogage
         return results
     except Exception as e:
         print(f"Erreur lors de la prédiction : {e}")
@@ -59,23 +62,42 @@ def flash_alert_image(frame, alert_image, frame_width, frame_height):
 
     return image_copy
 
+def plot_bboxes(results, frame):
+    if results:
+        for result in results:
+            if result.boxes is not None:
+                boxes = result.boxes.cpu().numpy()
+                xyxys = boxes.xyxy  # Les coordonnées des boîtes (x1, y1, x2, y2)
+                confidences = boxes.conf  # Les confidences des boîtes
+                print(f"Boîtes détectées : {xyxys}")  # Débogage des coordonnées des boîtes
+                print(f"Confiance des boîtes : {confidences}")  # Débogage des confiances
+                for xyyx, conf in zip(xyxys, confidences):
+                    x1, y1, x2, y2 = map(int, xyyx)  # Décomposer les coordonnées
+                    print(f"Rectangle à afficher : ({x1}, {y1}), ({x2}, {y2})")  # Vérifier les coordonnées
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Dessiner la boîte en bleu
+                    label = f"Conf: {conf:.2f}"
+                    cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+    return frame
+
 def detect_fire_and_alert(model, frame, conf: float, alert_played: bool) -> bool:
     print("Démarrage de la détection...")
     results = predict_fire(model, frame, conf)
     if results:
         for result in results:
-            for box in result.boxes:
-                class_index = int(box.cls)
-                class_name = model.names[class_index]
-                print(f"Classe détectée : {class_name}")
+            if result.boxes is not None:
+                for box in result.boxes:
+                    class_index = int(box.cls)
+                    class_name = model.names[class_index]
+                    print(f"Classe détectée : {class_name}")
 
-                # Si un feu est détecté et l'alerte n'a pas encore été jouée
-                if class_name == "fire" and not alert_played:
-                    print("Feu détecté, alerte en cours.")
-                    alert_thread = threading.Thread(target=play_alert, args=(ALERT_FILE,))
-                    alert_thread.daemon = True
-                    alert_thread.start()
-                    alert_played = True
+                    if class_name == "fire" and not alert_played:
+                        print("Feu détecté, alerte en cours.")
+                        alert_thread = threading.Thread(target=play_alert, args=(ALERT_FILE,))
+                        alert_thread.daemon = True
+                        alert_thread.start()
+                        alert_played = True
+
+                frame = plot_bboxes(results, frame)
     return alert_played
 
 def display_webcam(model, source, conf):
@@ -86,7 +108,7 @@ def display_webcam(model, source, conf):
 
     alert_played = False
     frame_count = 0
-    prediction_interval = 20  # Effectuer une prédiction tous les 30 frames
+    prediction_interval = 10  # Effectuer une prédiction tous les 10 frames
 
     while True:
         ret, frame = cap.read()
@@ -104,13 +126,11 @@ def display_webcam(model, source, conf):
         # Ajouter les images d'alerte si un feu a été détecté
         if alert_played:
             frame = flash_alert_image(frame, warning_img, frame_width, frame_height)
-        else:
-            frame = frame
 
         # Afficher l'image de la webcam avec l'alerte intégrée
         cv2.imshow("Webcam avec alerte", frame)
 
-        if cv2.waitKey(1) & 0xFF == ord('q') or cv2.waitKey(1) & 0xFF == 32:
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
@@ -118,7 +138,7 @@ def display_webcam(model, source, conf):
 
 def main():
     model = YOLO(MODEL_PATH)
-    display_webcam(model=model, source=0, conf=0.3)
+    display_webcam(model=model, source=0, conf=0.5)
 
 if __name__ == "__main__":
     main()

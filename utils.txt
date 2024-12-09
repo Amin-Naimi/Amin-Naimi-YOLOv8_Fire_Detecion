@@ -1,0 +1,5 @@
+Pour Determiner les coins d'une image:
+    Coin supérieur gauche : (x1,y1)=(0,0)
+    Coin supérieur droit : (x2,y2)=(Largeur-1,0) // -1 car les indices commencent à 0.
+    Coin inférieur gauche : (x3,y3)=(0,Hauteur-1)
+    Coin inférieur droit : (x4,y4)=(Largeur-1,Hauteur-1)​
